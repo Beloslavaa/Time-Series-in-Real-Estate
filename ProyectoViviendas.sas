@@ -178,6 +178,7 @@ run;
 proc sort data=espectro; by descending  p_01; run;
 proc print data=espectro(obs=10); run;
 
+symbol i=j;
 proc gplot data=viviendas;
 plot vivlag2*fecha;
 run;
@@ -408,8 +409,9 @@ run;
 proc arima data=viviendas; 
    identify var=vivlag2;run;
    estimate p=2 q=(12) noint; run;
-   outlier maxnum=6 /*los 6 outliers más significativos, menores que 0.001*/ 
-	alpha=0.001 id=fecha;run;
+   outlier maxnum=6 /*los 6 outliers más significativos, menores que 0.001*/ alpha=0.001 id=fecha;
+   forecast id=fecha lead=10 interval=month ;
+run;
 
 /* Se han encontrado dos datos atípicos, que en este caso son impulsos (additive) en ls observaciones 171 y 151.
 Vamos a crear una variable ficticia con que podemos explicar estos impulsos*/
@@ -431,8 +433,8 @@ proc print data=viviendas; run;
 proc arima data=viviendas; 
    identify var=vivlag2 crosscorr=(I_159 I_171 I_177); run;
    estimate p=2 q=(12) input=(I_159 I_171 I_177) noint; run;
-   outlier maxnum=6 id=t alpha=0.001;run; /*tenemos otro en 177, que quitamos, no tenemos más outliers*/
-   forecast out=predict id=t;run;
+   outlier maxnum=6 id=t alpha=0.001; /*tenemos otro en 177, que quitamos, no tenemos más outliers*/
+   run;
 
 /*escalon*/
 
@@ -511,6 +513,47 @@ quit;
 
 
 /* prediccion */
+proc sql;
+	
+	create table predict as
+		select . as vivlag2,
+			   max(intnx('month', fecha, 1)) as fecha format date9.,
+			   0 as I_159, 0 as I_171, 0 as I_177
+		from viviendas;
+			   
+run;
+
+data predict;
+    set predict;
+    format fecha date9.;
+	output;
+	do i=0 to 4;
+		fecha = intnx('month', fecha, 1);
+		vivlag2 = .;
+        I_159 = 0;
+        I_171 = 0;
+        I_177 = 0;
+        output;
+    end;
+    drop i;
+run;
+
+data allin;
+set viviendas predict; run;
+
+proc arima data=allin; 
+   identify var=segunda_mano(12) crosscorr=(I_159 I_171 I_177); run;
+   estimate p=2 q=(12) input=(I_159 I_171 I_177) noint; run;
+   *outlier maxnum=6 id=t alpha=0.001;run; /*tenemos otro en 177, que quitamos, no tenemos más outliers*/
+   forecast out=fore id=fecha interval=month lead=6;run;
+
+proc print data=fore; run;
+
+
+proc gplot data=fore;
+plot (segunda_mano forecast)*fecha / overlay legend;
+run;
+/**************/
 
 data train test;
     set viviendas;
